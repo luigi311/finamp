@@ -33,7 +33,15 @@ jobs:
   
   upload-linux:
     name: Build and Upload Linux Assets
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x64
+          - os: ubuntu-22.04-arm
+            arch: arm64
     steps:
     - name: Clone repository
       uses: actions/checkout@v4
@@ -45,38 +53,73 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential cmake ninja-build libgtk-3-dev
+    - name: Determine Flutter stable version
+      uses: subosito/flutter-action@v2
+      id: flutter-version
+      with:
+        architecture: 'x64'
+        channel: 'stable'
+        dry-run: true
     - name: Set up Flutter
       uses: subosito/flutter-action@v2
       with:
-        channel: 'stable'
+        # Prebuilt ARM linux builds are not provided, so build flutter from source
+        channel: master
+        flutter-version: "${{ steps.flutter-version.outputs.VERSION }}"
     - run: flutter doctor
     - run: flutter pub get
+
+    - name: Clone isar repository
+      if: matrix.arch == 'arm64'
+      uses: actions/checkout@v4
+      with:
+        path: isar
+        repository: Komodo5197/isar-community
+        ref: a602cd8999048faba043f7e1ce7ba92f4d812762
+    - name: Build isar core and inject into cached isar_flutter_libs
+      if: matrix.arch == 'arm64'
+      run: |
+        sh tool/build_linux.sh aarch64
+        mv libisar_linux_arm64.so $HOME/.pub-cache/git/isar_flutter_libs-59103190aa2ac03041d61ad6d127b540be079ec8/linux/libisar.so
+      working-directory: isar
+    
     - run: flutter build linux --release --no-pub
     # copy icon assets and desktop file next to bundle location for easy including in tar archive
     - run: |
-        cp -r assets/icon/linux/ build/linux/x64/release/icons \
-        && cp assets/finamp.desktop.m4 build/linux/x64/release/ \
-        && cp assets/com.unicornsonlsd.finamp.metainfo.xml build/linux/x64/release/
+        cp -r assets/icon/linux/ build/linux/${{ matrix.arch }}/release/icons \
+        && cp assets/finamp.desktop.m4 build/linux/${{ matrix.arch }}/release/ \
+        && cp assets/com.unicornsonlsd.finamp.metainfo.xml build/linux/${{ matrix.arch }}/release/
+
+    # Create dynamic names based on architecture, keep x64 name without arch to preserve backwards compatibility
+    - run: |
+        if [ "${{ matrix.arch }}" = "x64" ]; then
+          echo "TAR_NAME=finamp-${{ github.ref_name }}-linux-release.tar.gz" >> $GITHUB_ENV
+          echo "SHA_NAME=finamp-${{ github.ref_name }}-linux-release.tar.gz.sha256sum" >> $GITHUB_ENV
+        else
+          echo "TAR_NAME=finamp-${{ github.ref_name }}-linux-${{ matrix.arch }}-release.tar.gz" >> $GITHUB_ENV
+          echo "SHA_NAME=finamp-${{ github.ref_name }}-linux-${{ matrix.arch }}-release.tar.gz.sha256sum" >> $GITHUB_ENV
+        fi
+
     # archive bundle and generate checksum
     - run: |
-        tar -czf finamp-${{ github.ref_name }}-linux-release.tar.gz --directory build/linux/x64/release/ bundle icons finamp.desktop.m4 com.unicornsonlsd.finamp.metainfo.xml \
-        && sha256sum finamp-${{ github.ref_name }}-linux-release.tar.gz > finamp-${{ github.ref_name }}-linux-release.tar.gz.sha256sum
+        tar -czf $TAR_NAME --directory build/linux/${{ matrix.arch }}/release/ bundle icons finamp.desktop.m4 com.unicornsonlsd.finamp.metainfo.xml \
+        && sha256sum $TAR_NAME > $SHA_NAME
     - uses: actions/upload-artifact@v4
       with:
-        name: finamp-${{ github.ref_name }}-linux-release.tar.gz
-        path: finamp-${{ github.ref_name }}-linux-release.tar.gz
+        name: ${{ env.TAR_NAME }}
+        path: ${{ env.TAR_NAME }}
         compression-level: 0 # no compression
     - uses: actions/upload-artifact@v4
       with:
-        name: finamp-${{ github.ref_name }}-linux-release.tar.gz.sha256sum
-        path: finamp-${{ github.ref_name }}-linux-release.tar.gz.sha256sum
+        name: ${{ env.SHA_NAME }}
+        path: ${{ env.SHA_NAME }}
         compression-level: 0 # no compression
     - name: Upload release archive
       uses: alexellis/upload-assets@0.4.1
       env:
         GITHUB_TOKEN: ${{ github.token }}
       with:
-        asset_paths: '["./finamp-${{ github.ref_name }}-linux-release.tar.gz", "./finamp-${{ github.ref_name }}-linux-release.tar.gz.sha256sum"]'
+        asset_paths: '["./${{ env.TAR_NAME }}", "./${{ env.SHA_NAME }}"]'
 
   upload-windows:
     name: Build and Upload Windows Assets
@@ -125,72 +168,3 @@ jobs:
       with:
         # upload zip archive here, uploading the raw directory fails
         asset_paths: '["./Finamp-${{ github.ref_name }}-Windows.msix", "./Finamp-${{ github.ref_name }}-Windows.zip"]'
-
-  upload-linux-arm:
-    name: Build and Upload Linux ARM Assets
-    runs-on: ubuntu-22.04-arm
-    steps:
-      - name: Clone repository
-        uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build libgtk-3-dev
-      - name: Determine Flutter stable version
-        uses: subosito/flutter-action@v2
-        id: flutter-version
-        with:
-          architecture: 'x64'
-          channel: 'stable'
-          dry-run: true
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          # Prebuilt ARM linux builds are not provided, so build flutter from source
-          channel: master
-          flutter-version: "${{ steps.flutter-version.outputs.VERSION }}"
-      - run: flutter doctor
-      - run: flutter pub get
-
-      - name: Clone isar repository
-        uses: actions/checkout@v4
-        with:
-          path: isar
-          repository: Komodo5197/isar-community
-          ref: a602cd8999048faba043f7e1ce7ba92f4d812762
-      - name: Build isar core and inject into cached isar_flutter_libs
-        run: |
-          sh tool/build_linux.sh aarch64
-          mv libisar_linux_arm64.so $HOME/.pub-cache/git/isar_flutter_libs-59103190aa2ac03041d61ad6d127b540be079ec8/linux/libisar.so
-        working-directory: isar
-
-      - run: flutter build linux --release --no-pub
-      # copy icon assets and desktop file next to bundle location for easy including in tar archive
-      - run: |
-          cp -r assets/icon/linux/ build/linux/arm64/release/icons \
-          && cp assets/finamp.desktop.m4 build/linux/arm64/release/ \
-          && cp assets/com.unicornsonlsd.finamp.metainfo.xml build/linux/arm64/release/
-      # archive bundle and generate checksum
-      - run: |
-          tar -czf finamp-${{ github.ref_name }}-linux-arm-release.tar.gz --directory build/linux/arm64/release/ bundle icons finamp.desktop.m4 com.unicornsonlsd.finamp.metainfo.xml \
-          && sha256sum finamp-${{ github.ref_name }}-linux-arm-release.tar.gz > finamp-${{ github.ref_name }}-linux-arm-release.tar.gz.sha256sum
-      - uses: actions/upload-artifact@v4
-        with:
-          name: finamp-${{ github.ref_name }}-linux-arm-release.tar.gz
-          path: finamp-${{ github.ref_name }}-linux-arm-release.tar.gz
-          compression-level: 0 # no compression
-      - uses: actions/upload-artifact@v4
-        with:
-          name: finamp-${{ github.ref_name }}-linux-arm-release.tar.gz.sha256sum
-          path: finamp-${{ github.ref_name }}-linux-arm-release.tar.gz.sha256sum
-          compression-level: 0 # no compression
-      - name: Upload release archive
-        uses: alexellis/upload-assets@0.4.1
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-          asset_paths: '["./finamp-${{ github.ref_name }}-linux-arm-release.tar.gz", "./finamp-${{ github.ref_name }}-linux-arm-release.tar.gz.sha256sum"]'
