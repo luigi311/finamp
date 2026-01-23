@@ -1,6 +1,7 @@
 name: Build
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
 
@@ -141,7 +142,8 @@ jobs:
         && cp assets/finamp.desktop.m4 build/linux/${{ matrix.arch }}/release/ \
         && cp assets/com.unicornsonlsd.finamp.metainfo.xml build/linux/${{ matrix.arch }}/release/
     # Create dynamic names based on architecture, keep x64 name without arch to preserve backwards compatibility
-    - run: |
+    - name: Set archive and checksum names
+      run: |
         if [ "${{ matrix.arch }}" = "x64" ]; then
           echo "TAR_NAME=finamp-${{ github.ref_name }}-linux-release.tar.gz" >> $GITHUB_ENV
           echo "SHA_NAME=finamp-${{ github.ref_name }}-linux-release.tar.gz.sha256sum" >> $GITHUB_ENV
