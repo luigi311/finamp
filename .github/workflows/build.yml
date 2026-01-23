@@ -175,7 +175,13 @@ jobs:
         path: ${{ env.SHA_NAME }}
         compression-level: 0 # no compression
 
-
+    - name: Upload release archive
+      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      uses: alexellis/upload-assets@0.4.1
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        asset_paths: '["./${{ env.TAR_NAME }}", "./${{ env.SHA_NAME }}"]'
 
   build-windows:
     name: Build for Windows
@@ -210,6 +216,16 @@ jobs:
         name: finamp-windows.msix
         path: build/windows/x64/runner/Release/finamp.msix
         compression-level: 0 # no compression
+
+    - name: Upload release archive
+      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      uses: alexellis/upload-assets@0.4.1
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        # upload zip archive here, uploading the raw directory fails
+        asset_paths: '["./Finamp-${{ github.ref_name }}-Windows.msix", "./Finamp-${{ github.ref_name }}-Windows.zip"]'
+
   # build-macos:
   #   name: Build for macOS
   #   runs-on: macos-latest
