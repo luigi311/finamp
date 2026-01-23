@@ -208,9 +208,8 @@ jobs:
     - name: Prepare release archive
       if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
       run: |
-        cp -r build/windows/x64/runner/Release/ ./Finamp-${{ github.ref_name }}-Windows
         # zip folder
-        powershell -Command "Compress-Archive -Path './Finamp-${{ github.ref_name }}-Windows/*' -DestinationPath './Finamp-${{ github.ref_name }}-Windows.zip'"
+        powershell -Command "Compress-Archive -Path './build/windows/x64/runner/Release/*' -DestinationPath './Finamp-${{ github.ref_name }}-Windows.zip'"
 
     - run: |
         dart run msix:create --install-certificate false
